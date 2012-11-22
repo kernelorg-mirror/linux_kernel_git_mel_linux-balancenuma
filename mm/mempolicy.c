@@ -2521,6 +2521,50 @@ void mpol_free_shared_policy(struct shared_policy *p)
 	mutex_unlock(&p->mutex);
 }
 
+#ifdef CONFIG_BALANCE_NUMA
+static bool __initdata balancenuma_override;
+
+static void __init check_balancenuma_enable(void)
+{
+	bool balancenuma_default = false;
+
+	if (IS_ENABLED(CONFIG_BALANCE_NUMA_DEFAULT_ENABLED))
+		balancenuma_default = true;
+
+	if (nr_node_ids > 1 && !balancenuma_override) {
+		printk(KERN_INFO "Enabling automatic NUMA balancing. "
+			"Configure with balancenuma= or sysctl");
+		set_balancenuma_state(balancenuma_default);
+	}
+}
+
+static int __init setup_balancenuma(char *str)
+{
+	int ret = 0;
+	if (!str)
+		goto out;
+	balancenuma_override = true;
+
+	if (!strcmp(str, "enable")) {
+		set_balancenuma_state(true);
+		ret = 1;
+	} else if (!strcmp(str, "disable")) {
+		set_balancenuma_state(false);
+		ret = 1;
+	}
+out:
+	if (!ret)
+		printk(KERN_WARNING "Unable to parse balancenuma=\n");
+
+	return ret;
+}
+__setup("balancenuma=", setup_balancenuma);
+#else
+static inline void __init check_balancenuma_enable(void)
+{
+}
+#endif /* CONFIG_BALANCE_NUMA */
+
 /* assumes fs == KERNEL_DS */
 void __init numa_policy_init(void)
 {
@@ -2571,6 +2615,8 @@ void __init numa_policy_init(void)
 
 	if (do_set_mempolicy(MPOL_INTERLEAVE, 0, &interleave_nodes))
 		printk("numa_policy_init: interleaving failed\n");
+
+	check_balancenuma_enable();
 }
 
 /* Reset policy of current process to default */

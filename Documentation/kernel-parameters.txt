@@ -403,6 +403,9 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 	atkbd.softrepeat= [HW]
 			Use software keyboard repeat
 
+	balancenuma=	[KNL,X86] Enable or disable automatic NUMA balancing.
+			Allowed values are enable and disable
+
 	baycom_epp=	[HW,AX25]
 			Format: <io>,<mode>
 
