@@ -1563,8 +1563,12 @@ struct task_struct {
 
 #ifdef CONFIG_BALANCE_NUMA
 extern void task_numa_fault(int node, int pages, bool migrated);
+extern void set_balancenuma_state(bool enabled);
 #else
 static inline void task_numa_fault(int node, int pages, bool migrated)
+{
+}
+static inline void set_balancenuma_state(bool enabled)
 {
 }
 #endif
