@@ -1558,6 +1558,7 @@ static void __sched_fork(struct task_struct *p)
 }
 
 #ifdef CONFIG_BALANCE_NUMA
+#ifdef CONFIG_SCHED_DEBUG
 void set_balancenuma_state(bool enabled)
 {
 	if (enabled)
@@ -1565,6 +1566,14 @@ void set_balancenuma_state(bool enabled)
 	else
 		sched_feat_set("NO_NUMA");
 }
+#else
+__read_mostly bool balancenuma_enabled;
+
+void set_balancenuma_state(bool enabled)
+{
+	balancenuma_enabled = enabled;
+}
+#endif /* CONFIG_SCHED_DEBUG */
 #endif /* CONFIG_BALANCE_NUMA */
 
 /*
