@@ -78,8 +78,7 @@ config CLKSRC_EXYNOS_MCT
 	  Support for Multi Core Timer controller on Exynos SoCs.
 
 config CLKSRC_SAMSUNG_PWM
-	def_bool ARCH_EXYNOS4
-	depends on OF
+	bool
 	select CLKSRC_MMIO
 	help
 	  This is a new clocksource driver for the PWM timer found in
