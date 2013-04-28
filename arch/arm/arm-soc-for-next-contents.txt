@@ -368,3 +368,9 @@ late/cleanup
 late/fixes
 	patch	<201304210002.00125.arnd@arndb.de>
 		  depends on clksrc/cleanup
+	+ patch series from Tomasz Figa for universal
+
+late/dt
+	3 patches for Snow
+	samsung/late
+		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git tags/late-exynos-v3-for-v3.10
