@@ -313,6 +313,8 @@ next/soc2
 		  git://git.infradead.org/users/jcooper/linux.git tags/soc_for_v3.10
 		  depends on mvebu/cleanup
 		  depends on mvebu/drivers
+	patch
+		"ARM: imx: reset_controller may be disabled"
 
 next/boards2
 	renesas/boards2
@@ -373,13 +375,23 @@ late/cleanup
 	at91/soc4
 		  git://github.com/at91linux/linux-at91.git tags/at91-soc
 		  depends on at91/soc3
+	patch
+		"ARM: SPEAr: conditionalize SMP code"
 
 late/fixes
 	patch	<201304210002.00125.arnd@arndb.de>
 		  depends on clksrc/cleanup
 	+ patch series from Tomasz Figa for universal
-	patch
+	patches
 		 "ARM: default machine descriptor for multiplatform"
+		 "ARM: ux500: always select ABX500_CORE"
+		 "ARM: SIRF: select SMP_ON_UP only on SMP builds"
+		 "ARM: OMAP: don't select SERIAL_OMAP unconditionally"
+		 "ARM: SPEAr: conditionalize l2x0 support"
+		 "ARM: imx: build CPU suspend code only when needed"
+		 "ARM: OMAP: build SMP code only for OMAP4/5"
+		 "ARM: tegra: Tegra114 needs CPU_FREQ_TABLE"
+
 
 late/dt
 	3 patches for Snow
