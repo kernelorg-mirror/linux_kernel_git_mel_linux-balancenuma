@@ -12,7 +12,7 @@
 
 #define ADDR2G (1ULL << 31)
 
-static void find_memory_chunks(struct mem_chunk chunk[])
+static void find_memory_chunks(struct mem_chunk chunk[], unsigned long maxsize)
 {
 	unsigned long long memsize, rnmax, rzm;
 	unsigned long addr = 0, size;
@@ -27,6 +27,8 @@ static void find_memory_chunks(struct mem_chunk chunk[])
 		rzm = min(ADDR2G, rzm);
 		memsize = memsize ? min(ADDR2G, memsize) : ADDR2G;
 	}
+	if (maxsize)
+		memsize = memsize ? min((unsigned long)memsize, maxsize) : maxsize;
 	do {
 		size = 0;
 		type = tprot(addr);
@@ -36,6 +38,8 @@ static void find_memory_chunks(struct mem_chunk chunk[])
 				break;
 		} while (type == tprot(addr + size));
 		if (type == CHUNK_READ_WRITE || type == CHUNK_READ_ONLY) {
+			if (memsize && (addr + size > memsize))
+				size = memsize - addr;
 			chunk[i].addr = addr;
 			chunk[i].size = size;
 			chunk[i].type = type;
@@ -45,21 +49,48 @@ static void find_memory_chunks(struct mem_chunk chunk[])
 	} while (addr < memsize && i < MEMORY_CHUNKS);
 }
 
-void detect_memory_layout(struct mem_chunk chunk[])
+/**
+ * detect_memory_layout - fill mem_chunk array with memory layout data
+ * @chunk: mem_chunk array to be filled
+ * @maxsize: maximum address where memory detection should stop
+ *
+ * Fills the passed in memory chunk array with the memory layout of the
+ * machine. The array must have a size of at least MEMORY_CHUNKS and will
+ * be fully initialized afterwards.
+ * If the maxsize paramater has a value > 0 memory detection will stop at
+ * that address. It is guaranteed that all chunks have an ending address
+ * that is smaller than maxsize.
+ * If maxsize is 0 all memory will be detected.
+ */
+void detect_memory_layout(struct mem_chunk chunk[], unsigned long maxsize)
 {
-	unsigned long flags, cr0;
+	unsigned long flags, flags_dat, cr0;
 
 	memset(chunk, 0, MEMORY_CHUNKS * sizeof(struct mem_chunk));
-	/* Disable IRQs, DAT and low address protection so tprot does the
+	/*
+	 * Disable IRQs, DAT and low address protection so tprot does the
 	 * right thing and we don't get scheduled away with low address
 	 * protection disabled.
 	 */
-	flags = __arch_local_irq_stnsm(0xf8);
+	local_irq_save(flags);
+	flags_dat = __arch_local_irq_stnsm(0xfb);
+	/*
+	 * In case DAT was enabled, make sure chunk doesn't reside in vmalloc
+	 * space. We have disabled DAT and any access to vmalloc area will
+	 * cause an exception.
+	 * If DAT was disabled we are called from early ipl code.
+	 */
+	if (test_bit(5, &flags_dat)) {
+		if (WARN_ON_ONCE(is_vmalloc_or_module_addr(chunk)))
+			goto out;
+	}
 	__ctl_store(cr0, 0, 0);
 	__ctl_clear_bit(0, 28);
-	find_memory_chunks(chunk);
+	find_memory_chunks(chunk, maxsize);
 	__ctl_load(cr0, 0, 0);
-	arch_local_irq_restore(flags);
+out:
+	__arch_local_irq_ssm(flags_dat);
+	local_irq_restore(flags);
 }
 EXPORT_SYMBOL(detect_memory_layout);
 
