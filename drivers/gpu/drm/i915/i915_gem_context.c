@@ -124,10 +124,10 @@ static int get_context_size(struct drm_device *dev)
 	return ret;
 }
 
-static void do_destroy(struct i915_hw_context *ctx)
+void i915_gem_context_free(struct kref *ctx_ref)
 {
-	if (ctx->file_priv)
-		idr_remove(&ctx->file_priv->context_idr, ctx->id);
+	struct i915_hw_context *ctx = container_of(ctx_ref,
+						   typeof(*ctx), ref);
 
 	drm_gem_object_unreference(&ctx->obj->base);
 	kfree(ctx);
@@ -145,6 +145,7 @@ create_hw_context(struct drm_device *dev,
 	if (ctx == NULL)
 		return ERR_PTR(-ENOMEM);
 
+	kref_init(&ctx->ref);
 	ctx->obj = i915_gem_alloc_object(dev, dev_priv->hw_context_size);
 	if (ctx->obj == NULL) {
 		kfree(ctx);
@@ -169,18 +170,18 @@ create_hw_context(struct drm_device *dev,
 	if (file_priv == NULL)
 		return ctx;
 
-	ctx->file_priv = file_priv;
-
 	ret = idr_alloc(&file_priv->context_idr, ctx, DEFAULT_CONTEXT_ID + 1, 0,
 			GFP_KERNEL);
 	if (ret < 0)
 		goto err_out;
+
+	ctx->file_priv = file_priv;
 	ctx->id = ret;
 
 	return ctx;
 
 err_out:
-	do_destroy(ctx);
+	i915_gem_context_unreference(ctx);
 	return ERR_PTR(ret);
 }
 
@@ -226,7 +227,7 @@ static int create_default_context(struct drm_i915_private *dev_priv)
 err_unpin:
 	i915_gem_object_unpin(ctx->obj);
 err_destroy:
-	do_destroy(ctx);
+	i915_gem_context_unreference(ctx);
 	return ret;
 }
 
@@ -262,6 +263,7 @@ void i915_gem_context_init(struct drm_device *dev)
 void i915_gem_context_fini(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
+	struct i915_hw_context *dctx = dev_priv->ring[RCS].default_context;
 
 	if (dev_priv->hw_contexts_disabled)
 		return;
@@ -271,9 +273,16 @@ void i915_gem_context_fini(struct drm_device *dev)
 	 * other code, leading to spurious errors. */
 	intel_gpu_reset(dev);
 
-	i915_gem_object_unpin(dev_priv->ring[RCS].default_context->obj);
+	i915_gem_object_unpin(dctx->obj);
 
-	do_destroy(dev_priv->ring[RCS].default_context);
+	/* When default context is created and switched to, base object refcount
+	 * will be 2 (+1 from object creation and +1 from do_switch()).
+	 * i915_gem_context_fini() will be called after gpu_idle() has switched
+	 * to default context. So we need to unreference the base object once
+	 * to offset the do_switch part, so that i915_gem_context_unreference()
+	 * can then free the base object correctly. */
+	drm_gem_object_unreference(&dctx->obj->base);
+	i915_gem_context_unreference(dctx);
 }
 
 static int context_idr_cleanup(int id, void *p, void *data)
@@ -282,8 +291,7 @@ static int context_idr_cleanup(int id, void *p, void *data)
 
 	BUG_ON(id == DEFAULT_CONTEXT_ID);
 
-	do_destroy(ctx);
-
+	i915_gem_context_unreference(ctx);
 	return 0;
 }
 
@@ -512,8 +520,8 @@ int i915_gem_context_destroy_ioctl(struct drm_device *dev, void *data,
 		return -ENOENT;
 	}
 
-	do_destroy(ctx);
-
+	idr_remove(&ctx->file_priv->context_idr, ctx->id);
+	i915_gem_context_unreference(ctx);
 	mutex_unlock(&dev->struct_mutex);
 
 	DRM_DEBUG_DRIVER("HW context %d destroyed\n", args->ctx_id);

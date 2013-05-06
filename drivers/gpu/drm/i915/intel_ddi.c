@@ -181,7 +181,8 @@ void hsw_fdi_link_train(struct drm_crtc *crtc)
 
 	/* Enable the PCH Receiver FDI PLL */
 	rx_ctl_val = dev_priv->fdi_rx_config | FDI_RX_ENHANCE_FRAME_ENABLE |
-		     FDI_RX_PLL_ENABLE | ((intel_crtc->fdi_lanes - 1) << 19);
+		     FDI_RX_PLL_ENABLE |
+		     FDI_DP_PORT_WIDTH(intel_crtc->config.fdi_lanes);
 	I915_WRITE(_FDI_RXA_CTL, rx_ctl_val);
 	POSTING_READ(_FDI_RXA_CTL);
 	udelay(220);
@@ -209,7 +210,7 @@ void hsw_fdi_link_train(struct drm_crtc *crtc)
 		 * port reversal bit */
 		I915_WRITE(DDI_BUF_CTL(PORT_E),
 			   DDI_BUF_CTL_ENABLE |
-			   ((intel_crtc->fdi_lanes - 1) << 1) |
+			   ((intel_crtc->config.fdi_lanes - 1) << 1) |
 			   hsw_ddi_buf_ctl_values[i / 2]);
 		POSTING_READ(DDI_BUF_CTL(PORT_E));
 
@@ -675,7 +676,7 @@ static void intel_ddi_mode_set(struct drm_encoder *encoder,
 	int pipe = intel_crtc->pipe;
 	int type = intel_encoder->type;
 
-	DRM_DEBUG_KMS("Preparing DDI mode for Haswell on port %c, pipe %c\n",
+	DRM_DEBUG_KMS("Preparing DDI mode on port %c, pipe %c\n",
 		      port_name(port), pipe_name(pipe));
 
 	intel_crtc->eld_vld = false;
@@ -686,22 +687,7 @@ static void intel_ddi_mode_set(struct drm_encoder *encoder,
 
 		intel_dp->DP = intel_dig_port->port_reversal |
 			       DDI_BUF_CTL_ENABLE | DDI_BUF_EMP_400MV_0DB_HSW;
-		switch (intel_dp->lane_count) {
-		case 1:
-			intel_dp->DP |= DDI_PORT_WIDTH_X1;
-			break;
-		case 2:
-			intel_dp->DP |= DDI_PORT_WIDTH_X2;
-			break;
-		case 4:
-			intel_dp->DP |= DDI_PORT_WIDTH_X4;
-			break;
-		default:
-			intel_dp->DP |= DDI_PORT_WIDTH_X4;
-			WARN(1, "Unexpected DP lane count %d\n",
-			     intel_dp->lane_count);
-			break;
-		}
+		intel_dp->DP |= DDI_PORT_WIDTH(intel_dp->lane_count);
 
 		if (intel_dp->has_audio) {
 			DRM_DEBUG_DRIVER("DP audio on pipe %c on DDI\n",
@@ -748,8 +734,8 @@ intel_ddi_get_crtc_encoder(struct drm_crtc *crtc)
 	}
 
 	if (num_encoders != 1)
-		WARN(1, "%d encoders on crtc for pipe %d\n", num_encoders,
-		     intel_crtc->pipe);
+		WARN(1, "%d encoders on crtc for pipe %c\n", num_encoders,
+		     pipe_name(intel_crtc->pipe));
 
 	BUG_ON(ret == NULL);
 	return ret;
@@ -995,7 +981,7 @@ void intel_ddi_enable_transcoder_func(struct drm_crtc *crtc)
 			/* Can only use the always-on power well for eDP when
 			 * not using the panel fitter, and when not using motion
 			  * blur mitigation (which we don't support). */
-			if (dev_priv->pch_pf_size)
+			if (intel_crtc->config.pch_pfit.size)
 				temp |= TRANS_DDI_EDP_INPUT_A_ONOFF;
 			else
 				temp |= TRANS_DDI_EDP_INPUT_A_ON;
@@ -1022,7 +1008,7 @@ void intel_ddi_enable_transcoder_func(struct drm_crtc *crtc)
 
 	} else if (type == INTEL_OUTPUT_ANALOG) {
 		temp |= TRANS_DDI_MODE_SELECT_FDI;
-		temp |= (intel_crtc->fdi_lanes - 1) << 1;
+		temp |= (intel_crtc->config.fdi_lanes - 1) << 1;
 
 	} else if (type == INTEL_OUTPUT_DISPLAYPORT ||
 		   type == INTEL_OUTPUT_EDP) {
@@ -1030,25 +1016,10 @@ void intel_ddi_enable_transcoder_func(struct drm_crtc *crtc)
 
 		temp |= TRANS_DDI_MODE_SELECT_DP_SST;
 
-		switch (intel_dp->lane_count) {
-		case 1:
-			temp |= TRANS_DDI_PORT_WIDTH_X1;
-			break;
-		case 2:
-			temp |= TRANS_DDI_PORT_WIDTH_X2;
-			break;
-		case 4:
-			temp |= TRANS_DDI_PORT_WIDTH_X4;
-			break;
-		default:
-			temp |= TRANS_DDI_PORT_WIDTH_X4;
-			WARN(1, "Unsupported lane count %d\n",
-			     intel_dp->lane_count);
-		}
-
+		temp |= DDI_PORT_WIDTH(intel_dp->lane_count);
 	} else {
-		WARN(1, "Invalid encoder type %d for pipe %d\n",
-		     intel_encoder->type, pipe);
+		WARN(1, "Invalid encoder type %d for pipe %c\n",
+		     intel_encoder->type, pipe_name(pipe));
 	}
 
 	I915_WRITE(TRANS_DDI_FUNC_CTL(cpu_transcoder), temp);
@@ -1148,7 +1119,7 @@ bool intel_ddi_get_hw_state(struct intel_encoder *encoder,
 		}
 	}
 
-	DRM_DEBUG_KMS("No pipe for ddi port %i found\n", port);
+	DRM_DEBUG_KMS("No pipe for ddi port %c found\n", port_name(port));
 
 	return false;
 }
