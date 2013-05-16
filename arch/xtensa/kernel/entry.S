@@ -445,6 +445,10 @@ common_exception_return:
 	_bbci.l	a3, PS_UM_BIT, 4f
 
 	rsil	a2, 0
+#ifdef CONFIG_DEBUG_VM
+	movi	a4, check_tlb_sanity
+	callx4	a4
+#endif
 
 	/* Specific to a user exception exit:
 	 * We need to check some flags for signal handling and rescheduling,
