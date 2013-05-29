@@ -34,6 +34,7 @@ void acpi_pci_root_init(void);
 void acpi_pci_link_init(void);
 void acpi_pci_root_hp_init(void);
 void acpi_platform_init(void);
+void acpi_cmos_rtc_init(void);
 int acpi_sysfs_init(void);
 #ifdef CONFIG_ACPI_CONTAINER
 void acpi_container_init(void);
