@@ -464,9 +464,11 @@ init_pipe_control(struct intel_ring_buffer *ring)
 		goto err_unref;
 
 	pc->gtt_offset = obj->gtt_offset;
-	pc->cpu_page =  kmap(sg_page(obj->pages->sgl));
-	if (pc->cpu_page == NULL)
+	pc->cpu_page = kmap(sg_page(obj->pages->sgl));
+	if (pc->cpu_page == NULL) {
+		ret = -ENOMEM;
 		goto err_unpin;
+	}
 
 	DRM_DEBUG_DRIVER("%s pipe control offset: 0x%08x\n",
 			 ring->name, pc->gtt_offset);
@@ -515,6 +517,8 @@ static int init_render_ring(struct intel_ring_buffer *ring)
 	/* We need to disable the AsyncFlip performance optimisations in order
 	 * to use MI_WAIT_FOR_EVENT within the CS. It should already be
 	 * programmed to '1' on all products.
+	 *
+	 * WaDisableAsyncFlipPerfMode:snb,ivb,hsw,vlv
 	 */
 	if (INTEL_INFO(dev)->gen >= 6)
 		I915_WRITE(MI_MODE, _MASKED_BIT_ENABLE(ASYNC_FLIP_PERF_DISABLE));
@@ -1500,6 +1504,7 @@ void intel_ring_init_seqno(struct intel_ring_buffer *ring, u32 seqno)
 	}
 
 	ring->set_seqno(ring, seqno);
+	ring->hangcheck.seqno = seqno;
 }
 
 void intel_ring_advance(struct intel_ring_buffer *ring)
