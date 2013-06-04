@@ -776,7 +776,7 @@ static int spear_pcie_gadget_probe(struct platform_device *pdev)
 		goto err_iounmap_app;
 	}
 
-	dev_set_drvdata(&pdev->dev, target);
+	platform_set_drvdata(pdev, target);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -814,9 +814,11 @@ static int spear_pcie_gadget_probe(struct platform_device *pdev)
 		clk = clk_get_sys("pcie1", NULL);
 		if (IS_ERR(clk)) {
 			pr_err("%s:couldn't get clk for pcie1\n", __func__);
+			status = PTR_ERR(clk);
 			goto err_irq;
 		}
-		if (clk_enable(clk)) {
+		status = clk_enable(clk);
+		if (status) {
 			pr_err("%s:couldn't enable clk for pcie1\n", __func__);
 			goto err_irq;
 		}
@@ -828,9 +830,11 @@ static int spear_pcie_gadget_probe(struct platform_device *pdev)
 		clk = clk_get_sys("pcie2", NULL);
 		if (IS_ERR(clk)) {
 			pr_err("%s:couldn't get clk for pcie2\n", __func__);
+			status = PTR_ERR(clk);
 			goto err_irq;
 		}
-		if (clk_enable(clk)) {
+		status = clk_enable(clk);
+		if (status) {
 			pr_err("%s:couldn't enable clk for pcie2\n", __func__);
 			goto err_irq;
 		}
@@ -863,7 +867,7 @@ static int spear_pcie_gadget_remove(struct platform_device *pdev)
 	res0 = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	res1 = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 	irq = platform_get_irq(pdev, 0);
-	target = dev_get_drvdata(&pdev->dev);
+	target = platform_get_drvdata(pdev);
 	config = &target->config;
 
 	free_irq(irq, NULL);
