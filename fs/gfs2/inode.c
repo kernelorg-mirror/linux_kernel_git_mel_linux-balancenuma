@@ -189,6 +189,7 @@ struct inode *gfs2_inode_lookup(struct super_block *sb, unsigned int type,
 	return inode;
 
 fail_refresh:
+	ip->i_iopen_gh.gh_flags |= GL_NOCACHE;
 	ip->i_iopen_gh.gh_gl->gl_object = NULL;
 	gfs2_glock_dq_uninit(&ip->i_iopen_gh);
 fail_iopen:
@@ -587,7 +588,7 @@ static int gfs2_create_inode(struct inode *dir, struct dentry *dentry,
 		inode = gfs2_lookupi(dir, &dentry->d_name, 0);
 		gfs2_glock_dq_uninit(ghs);
 		d_instantiate(dentry, inode);
-		return IS_ERR(inode) ? PTR_ERR(inode) : 0;
+		return PTR_RET(inode);
 	}
 	if (error)
 		goto fail_gunlock;
