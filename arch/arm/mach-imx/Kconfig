@@ -812,6 +812,40 @@ config SOC_IMX6Q
 	help
 	  This enables support for Freescale i.MX6 Quad processor.
 
+config SOC_IMX6SL
+	bool "i.MX6 SoloLite support"
+	select ARM_ERRATA_754322
+	select ARM_ERRATA_775420
+	select ARM_GIC
+	select CPU_V7
+	select HAVE_IMX_ANATOP
+	select HAVE_IMX_GPC
+	select HAVE_IMX_MMDC
+	select HAVE_IMX_SRC
+	select PINCTRL
+	select PINCTRL_IMX6SL
+	select PL310_ERRATA_588369 if CACHE_PL310
+	select PL310_ERRATA_727915 if CACHE_PL310
+	select PL310_ERRATA_769419 if CACHE_PL310
+
+	help
+	  This enables support for Freescale i.MX6 SoloLite processor.
+
+config SOC_VF610
+	bool "Vybrid Family VF610 support"
+	select CPU_V7
+	select ARM_GIC
+	select CLKSRC_OF
+	select PINCTRL
+	select PINCTRL_VF610
+	select VF_PIT_TIMER
+	select PL310_ERRATA_588369 if CACHE_PL310
+	select PL310_ERRATA_727915 if CACHE_PL310
+	select PL310_ERRATA_769419 if CACHE_PL310
+
+	help
+	  This enable support for Freescale Vybrid VF610 processor.
+
 endif
 
 source "arch/arm/mach-imx/devices/Kconfig"
