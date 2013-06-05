@@ -27,6 +27,7 @@
 #include <asm/smp_plat.h>
 #include "armada-370-xp.h"
 
+unsigned long __cpuinitdata coherency_phys_base;
 static void __iomem *coherency_base;
 static void __iomem *coherency_cpu_base;
 
@@ -124,7 +125,10 @@ int __init coherency_init(void)
 
 	np = of_find_matching_node(NULL, of_coherency_table);
 	if (np) {
+		struct resource res;
 		pr_info("Initializing Coherency fabric\n");
+		of_address_to_resource(np, 0, &res);
+		coherency_phys_base = res.start;
 		coherency_base = of_iomap(np, 0);
 		coherency_cpu_base = of_iomap(np, 1);
 		set_cpu_coherent(cpu_logical_map(smp_processor_id()), 0);
