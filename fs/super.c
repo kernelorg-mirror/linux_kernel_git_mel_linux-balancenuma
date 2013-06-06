@@ -34,6 +34,7 @@
 #include <linux/cleancache.h>
 #include <linux/fsnotify.h>
 #include <linux/lockdep.h>
+#include <linux/memcontrol.h>
 #include "internal.h"
 
 
@@ -53,11 +54,15 @@ static char *sb_writers_name[SB_FREEZE_LEVELS] = {
  * shrinker path and that leads to deadlock on the shrinker_rwsem. Hence we
  * take a passive reference to the superblock to avoid this from occurring.
  */
-static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
+static long super_cache_scan(struct shrinker *shrink, struct shrink_control *sc)
 {
 	struct super_block *sb;
-	int	fs_objects = 0;
-	int	total_objects;
+	struct mem_cgroup *memcg = sc->target_mem_cgroup;
+	long	fs_objects = 0;
+	long	total_objects;
+	long	freed = 0;
+	long	dentries;
+	long	inodes;
 
 	sb = container_of(shrink, struct super_block, s_shrink);
 
@@ -65,46 +70,68 @@ static int prune_super(struct shrinker *shrink, struct shrink_control *sc)
 	 * Deadlock avoidance.  We may hold various FS locks, and we don't want
 	 * to recurse into the FS that called us in clear_inode() and friends..
 	 */
-	if (sc->nr_to_scan && !(sc->gfp_mask & __GFP_FS))
+	if (!(sc->gfp_mask & __GFP_FS))
 		return -1;
 
 	if (!grab_super_passive(sb))
 		return -1;
 
-	if (sb->s_op && sb->s_op->nr_cached_objects)
-		fs_objects = sb->s_op->nr_cached_objects(sb);
+	if (sb->s_op && sb->s_op->nr_cached_objects && !memcg)
+		fs_objects = sb->s_op->nr_cached_objects(sb, sc->nid);
 
-	total_objects = sb->s_nr_dentry_unused +
-			sb->s_nr_inodes_unused + fs_objects + 1;
+	inodes = list_lru_count_node_memcg(&sb->s_inode_lru, sc->nid, memcg);
+	dentries = list_lru_count_node_memcg(&sb->s_dentry_lru, sc->nid, memcg);
 
-	if (sc->nr_to_scan) {
-		int	dentries;
-		int	inodes;
+	total_objects = dentries + inodes + fs_objects + 1;
 
-		/* proportion the scan between the caches */
-		dentries = (sc->nr_to_scan * sb->s_nr_dentry_unused) /
-							total_objects;
-		inodes = (sc->nr_to_scan * sb->s_nr_inodes_unused) /
-							total_objects;
-		if (fs_objects)
-			fs_objects = (sc->nr_to_scan * fs_objects) /
-							total_objects;
-		/*
-		 * prune the dcache first as the icache is pinned by it, then
-		 * prune the icache, followed by the filesystem specific caches
-		 */
-		prune_dcache_sb(sb, dentries);
-		prune_icache_sb(sb, inodes);
+	/* proportion the scan between the caches */
+	dentries = mult_frac(sc->nr_to_scan, dentries, total_objects);
+	inodes = mult_frac(sc->nr_to_scan, inodes, total_objects);
 
-		if (fs_objects && sb->s_op->free_cached_objects) {
-			sb->s_op->free_cached_objects(sb, fs_objects);
-			fs_objects = sb->s_op->nr_cached_objects(sb);
-		}
-		total_objects = sb->s_nr_dentry_unused +
-				sb->s_nr_inodes_unused + fs_objects;
+	/*
+	 * prune the dcache first as the icache is pinned by it, then
+	 * prune the icache, followed by the filesystem specific caches
+	 */
+	freed = prune_dcache_sb(sb, dentries, sc->nid, memcg);
+	freed += prune_icache_sb(sb, inodes, sc->nid, memcg);
+
+	if (fs_objects) {
+		fs_objects = mult_frac(sc->nr_to_scan, fs_objects,
+								total_objects);
+		freed += sb->s_op->free_cached_objects(sb, fs_objects,
+						       sc->nid);
 	}
 
-	total_objects = (total_objects / 100) * sysctl_vfs_cache_pressure;
+	drop_super(sb);
+	return freed;
+}
+
+static long super_cache_count(struct shrinker *shrink, struct shrink_control *sc)
+{
+	struct super_block *sb;
+	long	total_objects = 0;
+	struct mem_cgroup *memcg = sc->target_mem_cgroup;
+
+	sb = container_of(shrink, struct super_block, s_shrink);
+
+	if (!grab_super_passive(sb))
+		return 0;
+
+	/*
+	 * Ideally we would pass memcg to nr_cached_objects, and
+	 * let the underlying filesystem decide. Most likely the
+	 * path will be if (!memcg) return;, but even then.
+	 */
+	if (sb->s_op && sb->s_op->nr_cached_objects && !memcg)
+		total_objects = sb->s_op->nr_cached_objects(sb,
+						 sc->nid);
+
+	total_objects += list_lru_count_node_memcg(&sb->s_dentry_lru,
+						 sc->nid, memcg);
+	total_objects += list_lru_count_node_memcg(&sb->s_inode_lru,
+						 sc->nid, memcg);
+
+	total_objects = vfs_pressure_ratio(total_objects);
 	drop_super(sb);
 	return total_objects;
 }
@@ -181,9 +208,10 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags)
 		INIT_HLIST_NODE(&s->s_instances);
 		INIT_HLIST_BL_HEAD(&s->s_anon);
 		INIT_LIST_HEAD(&s->s_inodes);
-		INIT_LIST_HEAD(&s->s_dentry_lru);
-		INIT_LIST_HEAD(&s->s_inode_lru);
-		spin_lock_init(&s->s_inode_lru_lock);
+
+		list_lru_init_memcg(&s->s_dentry_lru);
+		list_lru_init_memcg(&s->s_inode_lru);
+
 		INIT_LIST_HEAD(&s->s_mounts);
 		init_rwsem(&s->s_umount);
 		lockdep_set_class(&s->s_umount, &type->s_umount_key);
@@ -216,8 +244,10 @@ static struct super_block *alloc_super(struct file_system_type *type, int flags)
 		s->cleancache_poolid = -1;
 
 		s->s_shrink.seeks = DEFAULT_SEEKS;
-		s->s_shrink.shrink = prune_super;
+		s->s_shrink.scan_objects = super_cache_scan;
+		s->s_shrink.count_objects = super_cache_count;
 		s->s_shrink.batch = 1024;
+		s->s_shrink.flags = SHRINKER_NUMA_AWARE | SHRINKER_MEMCG_AWARE;
 	}
 out:
 	return s;
@@ -300,6 +330,8 @@ void deactivate_locked_super(struct super_block *s)
 
 		/* caches are now gone, we can safely kill the shrinker now */
 		unregister_shrinker(&s->s_shrink);
+		list_lru_destroy(&s->s_dentry_lru);
+		list_lru_destroy(&s->s_inode_lru);
 		put_filesystem(fs);
 		put_super(s);
 	} else {
