@@ -139,6 +139,10 @@ struct intel_encoder {
 	 * the encoder is active. If the encoder is enabled it also set the pipe
 	 * it is connected to in the pipe parameter. */
 	bool (*get_hw_state)(struct intel_encoder *, enum pipe *pipe);
+	/* Reconstructs the equivalent mode flags for the current hardware
+	 * state. */
+	void (*get_config)(struct intel_encoder *,
+			   struct intel_crtc_config *pipe_config);
 	int crtc_mask;
 	enum hpd_pin hpd_pin;
 };
@@ -239,12 +243,13 @@ struct intel_crtc_config {
 
 	int pipe_bpp;
 	struct intel_link_m_n dp_m_n;
-	/**
-	 * This is currently used by DP and HDMI encoders since those can have a
-	 * target pixel clock != the port link clock (which is currently stored
-	 * in adjusted_mode->clock).
+
+	/*
+	 * Frequence the dpll for the port should run at. Differs from the
+	 * adjusted dotclock e.g. for DP or 12bpc hdmi mode.
 	 */
-	int pixel_target_clock;
+	int port_clock;
+
 	/* Used by SDVO (and if we ever fix it, HDMI). */
 	unsigned pixel_multiplier;
 
@@ -264,6 +269,8 @@ struct intel_crtc_config {
 	/* FDI configuration, only valid if has_pch_encoder is set. */
 	int fdi_lanes;
 	struct intel_link_m_n fdi_m_n;
+
+	bool ips_enabled;
 };
 
 struct intel_crtc {
@@ -322,6 +329,18 @@ struct intel_plane {
 	unsigned int crtc_w, crtc_h;
 	uint32_t src_x, src_y;
 	uint32_t src_w, src_h;
+
+	/* Since we need to change the watermarks before/after
+	 * enabling/disabling the planes, we need to store the parameters here
+	 * as the other pieces of the struct may not reflect the values we want
+	 * for the watermark calculations. Currently only Haswell uses this.
+	 */
+	struct {
+		bool enable;
+		uint8_t bytes_per_pixel;
+		uint32_t horiz_pixels;
+	} wm;
+
 	void (*update_plane)(struct drm_plane *plane,
 			     struct drm_framebuffer *fb,
 			     struct drm_i915_gem_object *obj,
@@ -610,7 +629,6 @@ extern void intel_crtc_load_lut(struct drm_crtc *crtc);
 extern void intel_crtc_update_dpms(struct drm_crtc *crtc);
 extern void intel_encoder_destroy(struct drm_encoder *encoder);
 extern void intel_encoder_dpms(struct intel_encoder *encoder, int mode);
-extern bool intel_encoder_check_is_cloned(struct intel_encoder *encoder);
 extern void intel_connector_dpms(struct drm_connector *, int mode);
 extern bool intel_connector_get_hw_state(struct intel_connector *connector);
 extern void intel_modeset_check_state(struct drm_device *dev);
@@ -727,9 +745,7 @@ extern void intel_ddi_init(struct drm_device *dev, enum port port);
 extern void intel_update_watermarks(struct drm_device *dev);
 extern void intel_update_sprite_watermarks(struct drm_device *dev, int pipe,
 					   uint32_t sprite_width,
-					   int pixel_size);
-extern void intel_update_linetime_watermarks(struct drm_device *dev, int pipe,
-			 struct drm_display_mode *mode);
+					   int pixel_size, bool enable);
 
 extern unsigned long intel_gen4_compute_page_offset(int *x, int *y,
 						    unsigned int tiling_mode,
@@ -740,10 +756,6 @@ extern int intel_sprite_set_colorkey(struct drm_device *dev, void *data,
 				     struct drm_file *file_priv);
 extern int intel_sprite_get_colorkey(struct drm_device *dev, void *data,
 				     struct drm_file *file_priv);
-
-extern u32 intel_dpio_read(struct drm_i915_private *dev_priv, int reg);
-extern void intel_dpio_write(struct drm_i915_private *dev_priv, int reg,
-			     u32 val);
 
 /* Power-related functions, located in intel_pm.c */
 extern void intel_init_pm(struct drm_device *dev);
@@ -774,7 +786,7 @@ extern void intel_ddi_disable_transcoder_func(struct drm_i915_private *dev_priv,
 extern void intel_ddi_enable_pipe_clock(struct intel_crtc *intel_crtc);
 extern void intel_ddi_disable_pipe_clock(struct intel_crtc *intel_crtc);
 extern void intel_ddi_setup_hw_pll_state(struct drm_device *dev);
-extern bool intel_ddi_pll_mode_set(struct drm_crtc *crtc, int clock);
+extern bool intel_ddi_pll_mode_set(struct drm_crtc *crtc);
 extern void intel_ddi_put_crtc_pll(struct drm_crtc *crtc);
 extern void intel_ddi_set_pipe_settings(struct drm_crtc *crtc);
 extern void intel_ddi_prepare_link_retrain(struct drm_encoder *encoder);
