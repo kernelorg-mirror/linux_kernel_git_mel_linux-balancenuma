@@ -24,7 +24,6 @@
 #include <linux/hardirq.h>
 #include <linux/jump_label.h>
 #include <linux/list_lru.h>
-#include <linux/mm.h>
 
 struct mem_cgroup;
 struct page_cgroup;
