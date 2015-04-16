@@ -5272,10 +5272,10 @@ static void __paginginit free_area_init_core(struct pglist_data *pgdat)
 		zone->min_slab_pages = (freesize * sysctl_min_slab_ratio) / 100;
 #endif
 		zone->name = zone_names[j];
-		spin_lock_init(&zone->lock);
-		spin_lock_init(&zone->lru_lock);
-		zone_seqlock_init(zone);
 		zone->zone_pgdat = pgdat;
+		spin_lock_init(&zone->lock);
+		spin_lock_init(zone_lru_lock(zone));
+		zone_seqlock_init(zone);
 		zone_pcp_init(zone);
 
 		/* For bootup, initialized properly in watermark setup */

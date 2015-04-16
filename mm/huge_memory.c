@@ -3284,7 +3284,7 @@ static void __split_huge_page(struct page *page, struct list_head *list)
 	int i, tail_mapcount;
 
 	/* prevent PageLRU to go away from under us, and freeze lru stats */
-	spin_lock_irq(&zone->lru_lock);
+	spin_lock_irq(zone_lru_lock(zone));
 	lruvec = mem_cgroup_page_lruvec(head, zone);
 
 	/* complete memcg works before add pages to LRU */
@@ -3296,7 +3296,7 @@ static void __split_huge_page(struct page *page, struct list_head *list)
 	atomic_sub(tail_mapcount, &head->_count);
 
 	ClearPageCompound(head);
-	spin_unlock_irq(&zone->lru_lock);
+	spin_unlock_irq(zone_lru_lock(zone));
 
 	unfreeze_page(page_anon_vma(head), head);
 
