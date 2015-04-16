@@ -180,7 +180,7 @@ static void unpack_shadow(void *shadow,
 
 	*zone = NODE_DATA(nid)->node_zones + zid;
 
-	refault = atomic_long_read(&(*zone)->inactive_age);
+	refault = atomic_long_read(&(*zone)->zone_pgdat->inactive_age);
 	mask = ~0UL >> (NODES_SHIFT + ZONES_SHIFT +
 			RADIX_TREE_EXCEPTIONAL_SHIFT);
 	/*
@@ -215,7 +215,7 @@ void *workingset_eviction(struct address_space *mapping, struct page *page)
 	struct zone *zone = page_zone(page);
 	unsigned long eviction;
 
-	eviction = atomic_long_inc_return(&zone->inactive_age);
+	eviction = atomic_long_inc_return(&zone->zone_pgdat->inactive_age);
 	return pack_shadow(eviction, zone);
 }
 
@@ -236,7 +236,7 @@ bool workingset_refault(void *shadow)
 	unpack_shadow(shadow, &zone, &refault_distance);
 	inc_zone_state(zone, WORKINGSET_REFAULT);
 
-	if (refault_distance <= zone_page_state(zone, NR_ACTIVE_FILE)) {
+	if (refault_distance <= node_page_state(zone->zone_pgdat, NR_ACTIVE_FILE)) {
 		inc_zone_state(zone, WORKINGSET_ACTIVATE);
 		return true;
 	}
@@ -249,7 +249,7 @@ bool workingset_refault(void *shadow)
  */
 void workingset_activation(struct page *page)
 {
-	atomic_long_inc(&page_zone(page)->inactive_age);
+	atomic_long_inc(&page_zone(page)->zone_pgdat->inactive_age);
 }
 
 /*

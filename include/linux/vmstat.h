@@ -187,6 +187,7 @@ extern void zone_statistics(struct zone *, struct zone *, gfp_t gfp);
 
 #else
 
+#define sum_zone_node_page_state(node, item) global_node_page_state(item)
 #define node_page_state(node, item) global_node_page_state(item)
 #define zone_statistics(_zl, _z, gfp) do { } while (0)
 
