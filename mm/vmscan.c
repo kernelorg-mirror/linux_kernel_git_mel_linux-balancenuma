@@ -3268,29 +3268,24 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 				 */
 				clear_bit(PGDAT_CONGESTED, &zone->zone_pgdat->flags);
 				clear_bit(PGDAT_DIRTY, &zone->zone_pgdat->flags);
+
+				/*
+				 * If any zone is currently balanced then kswapd will
+				 * not call compaction as it is expected that the
+				 * necessary pages are already available.
+				 */
+				if (pgdat_needs_compaction &&
+						zone_watermark_ok(zone, order,
+							low_wmark_pages(zone),
+							*classzone_idx, 0)) {
+					pgdat_needs_compaction = false;
+				}
+
 			}
 		}
 
 		if (i < 0)
 			goto out;
-
-		for (i = 0; i <= end_zone; i++) {
-			struct zone *zone = pgdat->node_zones + i;
-
-			if (!populated_zone(zone))
-				continue;
-
-			/*
-			 * If any zone is currently balanced then kswapd will
-			 * not call compaction as it is expected that the
-			 * necessary pages are already available.
-			 */
-			if (pgdat_needs_compaction &&
-					zone_watermark_ok(zone, order,
-						low_wmark_pages(zone),
-						*classzone_idx, 0))
-				pgdat_needs_compaction = false;
-		}
 
 		/*
 		 * If we're getting trouble reclaiming, start doing writepage
