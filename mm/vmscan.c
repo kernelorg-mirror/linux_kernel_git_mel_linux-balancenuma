@@ -3007,15 +3007,28 @@ static void age_active_anon(struct pglist_data *pgdat,
 }
 
 static bool zone_balanced(struct zone *zone, int order,
-			  unsigned long balance_gap, int classzone_idx)
+			  int classzone_idx, bool *pgdat_needs_compaction)
 {
-	if (!zone_watermark_ok_safe(zone, order, high_wmark_pages(zone) +
-				    balance_gap, classzone_idx))
+	if (!zone_watermark_ok_safe(zone, order, high_wmark_pages(zone),
+				    classzone_idx))
 		return false;
+
+	/*
+	 * If any eligible zone is balanced then the node is not considered
+	 * to be congested or dirty
+	 */
+	clear_bit(PGDAT_CONGESTED, &zone->zone_pgdat->flags);
+	clear_bit(PGDAT_DIRTY, &zone->zone_pgdat->flags);
 
 	if (IS_ENABLED(CONFIG_COMPACTION) && order && compaction_suitable(zone,
 				order, 0, classzone_idx) == COMPACT_SKIPPED)
 		return false;
+
+	/*
+	 * If a zone is balanced and compaction can start then there is no
+	 * need for kswapd to call compact_pgdat
+	 */
+	*pgdat_needs_compaction = false;
 
 	return true;
 }
@@ -3030,6 +3043,7 @@ static bool prepare_kswapd_sleep(pg_data_t *pgdat, int order, long remaining,
 					int classzone_idx)
 {
 	int i;
+	bool dummy;
 
 	/* If a direct reclaimer woke kswapd within HZ/10, it's premature */
 	if (remaining)
@@ -3054,7 +3068,7 @@ static bool prepare_kswapd_sleep(pg_data_t *pgdat, int order, long remaining,
 	for (i = 0; i <= classzone_idx; i++) {
 		struct zone *zone = pgdat->node_zones + i;
 
-		if (zone_balanced(zone, order, 0, classzone_idx))
+		if (zone_balanced(zone, order, classzone_idx, &dummy))
 			return true;
 	}
 
@@ -3179,29 +3193,10 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 				break;
 			}
 
-			if (!zone_balanced(zone, order, 0, 0)) {
+			if (!zone_balanced(zone, order, 0,
+						&pgdat_needs_compaction)) {
 				end_zone = i;
 				break;
-			} else {
-				/*
-				 * If any eligible zone is balanced then the
-				 * node is not considered congested or dirty.
-				 */
-				clear_bit(PGDAT_CONGESTED, &zone->zone_pgdat->flags);
-				clear_bit(PGDAT_DIRTY, &zone->zone_pgdat->flags);
-
-				/*
-				 * If any zone is currently balanced then kswapd will
-				 * not call compaction as it is expected that the
-				 * necessary pages are already available.
-				 */
-				if (pgdat_needs_compaction &&
-						zone_watermark_ok(zone, order,
-							low_wmark_pages(zone),
-							*classzone_idx, 0)) {
-					pgdat_needs_compaction = false;
-				}
-
 			}
 		}
 
@@ -3265,11 +3260,9 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 			if (!populated_zone(zone))
 				continue;
 
-			if (zone_balanced(zone, sc.order, 0, *classzone_idx)) {
-				clear_bit(PGDAT_CONGESTED, &pgdat->flags);
-				clear_bit(PGDAT_DIRTY, &pgdat->flags);
+			if (zone_balanced(zone, sc.order, *classzone_idx,
+						&pgdat_needs_compaction))
 				goto out;
-			}
 		}
 
 		/*
@@ -3461,6 +3454,7 @@ static int kswapd(void *p)
 void wakeup_kswapd(struct zone *zone, int order, enum zone_type classzone_idx)
 {
 	pg_data_t *pgdat;
+	bool dummy;
 
 	if (!populated_zone(zone))
 		return;
@@ -3474,7 +3468,7 @@ void wakeup_kswapd(struct zone *zone, int order, enum zone_type classzone_idx)
 	}
 	if (!waitqueue_active(&pgdat->kswapd_wait))
 		return;
-	if (zone_balanced(zone, order, 0, 0))
+	if (zone_balanced(zone, order, 0, &dummy))
 		return;
 
 	trace_mm_vmscan_wakeup_kswapd(pgdat->node_id, zone_idx(zone), order);
