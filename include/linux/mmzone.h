@@ -114,7 +114,6 @@ struct zone_padding {
 enum zone_stat_item {
 	/* First 128 byte cacheline (assuming 64 bit words) */
 	NR_FREE_PAGES,
-	NR_ALLOC_BATCH,
 	NR_MLOCK,		/* mlock()ed pages found and moved off LRU */
 	NR_SLAB_RECLAIMABLE,
 	NR_SLAB_UNRECLAIMABLE,
@@ -508,7 +507,6 @@ struct zone {
 
 enum zone_flags {
 	ZONE_OOM_LOCKED,		/* zone is in OOM killer zonelist */
-	ZONE_FAIR_DEPLETED,		/* fair zone policy batch depleted */
 };
 
 enum pgdat_flags {
