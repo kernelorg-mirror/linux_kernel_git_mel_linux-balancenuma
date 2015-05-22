@@ -16,7 +16,7 @@
 /*
  *		Double CLOCK lists
  *
- * Per zone, two clock lists are maintained for file pages: the
+ * Per node, two clock lists are maintained for file pages: the
  * inactive and the active list.  Freshly faulted pages start out at
  * the head of the inactive list and page reclaim scans pages from the
  * tail.  Pages that are accessed multiple times on the inactive list
@@ -141,48 +141,43 @@
  *
  *		Implementation
  *
- * For each zone's file LRU lists, a counter for inactive evictions
- * and activations is maintained (zone->inactive_age).
+ * For each node's file LRU lists, a counter for inactive evictions
+ * and activations is maintained (node->inactive_age).
  *
  * On eviction, a snapshot of this counter (along with some bits to
- * identify the zone) is stored in the now empty page cache radix tree
+ * identify the node) is stored in the now empty page cache radix tree
  * slot of the evicted page.  This is called a shadow entry.
  *
  * On cache misses for which there are shadow entries, an eligible
  * refault distance will immediately activate the refaulting page.
  */
 
-static void *pack_shadow(unsigned long eviction, struct zone *zone)
+static void *pack_shadow(unsigned long eviction, struct pglist_data *pgdat)
 {
-	eviction = (eviction << NODES_SHIFT) | zone_to_nid(zone);
-	eviction = (eviction << ZONES_SHIFT) | zone_idx(zone);
+	eviction = (eviction << NODES_SHIFT) | pgdat->node_id;
 	eviction = (eviction << RADIX_TREE_EXCEPTIONAL_SHIFT);
 
 	return (void *)(eviction | RADIX_TREE_EXCEPTIONAL_ENTRY);
 }
 
 static void unpack_shadow(void *shadow,
-			  struct zone **zone,
+			  struct pglist_data **pgdat,
 			  unsigned long *distance)
 {
 	unsigned long entry = (unsigned long)shadow;
 	unsigned long eviction;
 	unsigned long refault;
 	unsigned long mask;
-	int zid, nid;
+	int nid;
 
 	entry >>= RADIX_TREE_EXCEPTIONAL_SHIFT;
-	zid = entry & ((1UL << ZONES_SHIFT) - 1);
-	entry >>= ZONES_SHIFT;
 	nid = entry & ((1UL << NODES_SHIFT) - 1);
 	entry >>= NODES_SHIFT;
 	eviction = entry;
 
-	*zone = NODE_DATA(nid)->node_zones + zid;
-
-	refault = atomic_long_read(&(*zone)->zone_pgdat->inactive_age);
-	mask = ~0UL >> (NODES_SHIFT + ZONES_SHIFT +
-			RADIX_TREE_EXCEPTIONAL_SHIFT);
+	*pgdat = NODE_DATA(nid);
+	refault = atomic_long_read(&(*pgdat)->inactive_age);
+	mask = ~0UL >> (NODES_SHIFT + RADIX_TREE_EXCEPTIONAL_SHIFT);
 	/*
 	 * The unsigned subtraction here gives an accurate distance
 	 * across inactive_age overflows in most cases.
@@ -212,11 +207,11 @@ static void unpack_shadow(void *shadow,
  */
 void *workingset_eviction(struct address_space *mapping, struct page *page)
 {
-	struct zone *zone = page_zone(page);
+	struct pglist_data *pgdat = page_zone(page)->zone_pgdat;
 	unsigned long eviction;
 
-	eviction = atomic_long_inc_return(&zone->zone_pgdat->inactive_age);
-	return pack_shadow(eviction, zone);
+	eviction = atomic_long_inc_return(&pgdat->inactive_age);
+	return pack_shadow(eviction, pgdat);
 }
 
 /**
@@ -224,20 +219,20 @@ void *workingset_eviction(struct address_space *mapping, struct page *page)
  * @shadow: shadow entry of the evicted page
  *
  * Calculates and evaluates the refault distance of the previously
- * evicted page in the context of the zone it was allocated in.
+ * evicted page in the context of the node it was allocated in.
  *
  * Returns %true if the page should be activated, %false otherwise.
  */
 bool workingset_refault(void *shadow)
 {
 	unsigned long refault_distance;
-	struct zone *zone;
+	struct pglist_data *pgdat;
 
-	unpack_shadow(shadow, &zone, &refault_distance);
-	inc_zone_state(zone, WORKINGSET_REFAULT);
+	unpack_shadow(shadow, &pgdat, &refault_distance);
+	inc_node_state(pgdat, WORKINGSET_REFAULT);
 
-	if (refault_distance <= node_page_state(zone->zone_pgdat, NR_ACTIVE_FILE)) {
-		inc_zone_state(zone, WORKINGSET_ACTIVATE);
+	if (refault_distance <= node_page_state(pgdat, NR_ACTIVE_FILE)) {
+		inc_node_state(pgdat, WORKINGSET_ACTIVATE);
 		return true;
 	}
 	return false;
@@ -356,7 +351,7 @@ static enum lru_status shadow_lru_isolate(struct list_head *item,
 		}
 	}
 	BUG_ON(node->count);
-	inc_zone_state(page_zone(virt_to_page(node)), WORKINGSET_NODERECLAIM);
+	inc_node_state(page_zone(virt_to_page(node))->zone_pgdat, WORKINGSET_NODERECLAIM);
 	if (!__radix_tree_delete_node(&mapping->page_tree, node))
 		BUG();
 
