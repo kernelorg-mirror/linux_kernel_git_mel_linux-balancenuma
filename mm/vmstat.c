@@ -1007,6 +1007,8 @@ const char * const vmstat_text[] = {
 	"pgmajfault",
 	"pglazyfreed",
 
+	TEXTS_FOR_ZONES("pgskip")
+
 	"pgrefill",
 	"pgsteal_kswapd",
 	"pgsteal_direct",

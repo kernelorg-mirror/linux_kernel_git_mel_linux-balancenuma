@@ -1392,8 +1392,10 @@ static unsigned long isolate_lru_pages(unsigned long nr_to_scan,
 
 		VM_BUG_ON_PAGE(!PageLRU(page), page);
 
-		if (page_zone_id(page) > sc->reclaim_idx)
+		if (page_zone_id(page) > sc->reclaim_idx) {
 			list_move(&page->lru, &pages_skipped);
+			__count_zone_vm_events(PGSCAN_SKIP, page_zone(page), 1);
+		}
 
 		switch (__isolate_lru_page(page, mode)) {
 		case 0:
