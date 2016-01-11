@@ -3176,28 +3176,32 @@ static unsigned long balance_pgdat(pg_data_t *pgdat, int order,
 		if (!pgdat_reclaimable(pgdat))
 			sc.priority = min(sc.priority, DEF_PRIORITY - 3);
 
-		/* Scan from the highest requested zone to dma */
+		/*
+		 * If the number of buffer_heads in the machine exceeds the
+		 * maximum allowed level and this node has a highmem zone,
+		 * force kswapd to reclaim from it to relieve lowmem pressure.
+		 */
+		if (buffer_heads_over_limit) {
+			for (i = MAX_NR_ZONES; i >= 0; i++) {
+				zone = pgdat->node_zones + i;
+				if (!populated_zone(zone))
+					continue;
+
+				if (is_highmem_idx(i))
+					*classzone_idx = i;
+				break;
+			}
+		}
+
+		/* Only reclaim if there are no eligible zones */
 		for (i = *classzone_idx; i >= 0; i--) {
 			zone = pgdat->node_zones + i;
 			if (!populated_zone(zone))
 				continue;
 
-			/*
-			 * If the number of buffer_heads in the machine
-			 * exceeds the maximum allowed level and this node
-			 * has a highmem zone, force kswapd to reclaim from
-			 * it to relieve lowmem pressure.
-			 */
-			if (buffer_heads_over_limit && is_highmem_idx(i)) {
-				end_zone = i;
+			if (!zone_balanced(zone, order, *classzone_idx,
+						&pgdat_needs_compaction))
 				break;
-			}
-
-			if (!zone_balanced(zone, order, 0,
-						&pgdat_needs_compaction)) {
-				end_zone = i;
-				break;
-			}
 		}
 
 		if (i < 0)
